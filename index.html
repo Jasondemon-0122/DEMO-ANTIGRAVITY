@@ -354,6 +354,48 @@
       font-weight: 500;
     }
 
+    /* Travel Recommendation Styles */
+    .question-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .question-item label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .question-item select {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid var(--glass-border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      backdrop-filter: blur(8px);
+      cursor: pointer;
+    }
+    .question-item select option {
+      background: #0f172a;
+      color: var(--text-primary);
+    }
+    .rec-rank-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--glass-border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+    }
+    .rec-rank-score {
+      font-weight: 700;
+      color: var(--accent);
+    }
+
     footer { position: relative; z-index: 2; margin-top: 40px; text-align: center; font-size: 0.78rem; color: var(--text-muted); }
     footer a { color: var(--accent); text-decoration: none; }
     footer a:hover { text-decoration: underline; }
@@ -490,6 +532,57 @@
     <div class="section-title">&#128202; City Suitability Comparison &amp; Ranking</div>
     <div class="comparison-grid" id="comparisonGrid"></div>
   </div>
+
+  <!-- Recommendation Card -->
+  <div class="card" id="recommendationCard" style="display:none; margin-top:24px;">
+    <div class="section-title">&#9992;&#65039; Personal Travel Recommendation</div>
+    <div id="questionnaireArea" style="display: flex; flex-direction: column; gap: 14px;">
+      <p class="tagline" style="margin-bottom: 6px;">Answer these 4 quick questions to find your perfect travel match among your compared cities:</p>
+      
+      <div class="question-item">
+        <label>1. Temperature preference:</label>
+        <select id="prefTemp">
+          <option value="hot">I like it hot (&gt; 25°C / 77°F)</option>
+          <option value="cold">I like it cold (&lt; 15°C / 59°F)</option>
+          <option value="moderate" selected>I prefer moderate/mild (15°C - 25°C)</option>
+        </select>
+      </div>
+      
+      <div class="question-item">
+        <label>2. How do you feel about rain?</label>
+        <select id="prefRain">
+          <option value="hate" selected>I absolutely hate rain (give me clear skies)</option>
+          <option value="okay">I don't mind rain/drizzle</option>
+        </select>
+      </div>
+      
+      <div class="question-item">
+        <label>3. Do you like outdoor activities?</label>
+        <select id="prefOutdoor">
+          <option value="yes" selected>Yes, I love outdoors (hiking, walking, sports)</option>
+          <option value="no">No, I prefer indoor activities (museums, dining, shopping)</option>
+        </select>
+      </div>
+      
+      <div class="question-item">
+        <label>4. What is your primary trip purpose?</label>
+        <select id="prefPurpose">
+          <option value="relax" selected>Relaxation &amp; Leisure</option>
+          <option value="adventure">Sightseeing &amp; Adventure</option>
+          <option value="culture">Food &amp; Culture</option>
+        </select>
+      </div>
+      
+      <button id="getRecBtn" class="compare-add-btn" style="margin-top: 8px; width: 100%; font-weight: 700;">Find Best Match &#9992;&#65039;</button>
+    </div>
+    
+    <div id="recResultArea" style="display:none; margin-top: 24px; border-top: 1px solid var(--glass-border); padding-top: 20px;">
+      <h3 id="recWinner" style="font-size: 1.3rem; color: #34d399; margin-bottom: 8px;"></h3>
+      <div id="recExplanation" style="font-size: 0.9rem; line-height: 1.6; color: var(--text-primary); background: rgba(255,255,255,0.03); padding: 16px; border-radius: 12px; border: 1px solid var(--glass-border); margin-bottom: 16px;"></div>
+      <div class="section-title" style="margin-top: 14px; margin-bottom: 8px;">Ranked Alternatives &amp; Scores</div>
+      <div id="recRankList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+    </div>
+  </div>
 </div>
 
 <footer>Powered by <a href="https://openweathermap.org" target="_blank">OpenWeatherMap</a> &middot; Built with &#10084;&#65039; by WeatherNow</footer>
@@ -522,6 +615,7 @@
   compareBtn.addEventListener('click', () => {
     if (latestWeatherData) addToComparison(latestWeatherData, latestAirData);
   });
+  document.getElementById('getRecBtn').addEventListener('click', getTravelRecommendation);
 
   // Load map and default city weather on startup
   window.addEventListener('DOMContentLoaded', () => {
@@ -727,7 +821,9 @@
       tempScore: tempScore.toFixed(1),
       humScore: humScore.toFixed(1),
       aqiScore: aqiScore.toFixed(1),
-      overall: overall
+      overall: overall,
+      weatherId: curr.weather[0].id,
+      weatherDesc: curr.weather[0].description
     });
 
     renderComparison();
@@ -740,14 +836,18 @@
 
   function renderComparison() {
     const card = document.getElementById('comparisonCard');
+    const recCard = document.getElementById('recommendationCard');
     const grid = document.getElementById('comparisonGrid');
     
     if (comparedCities.length === 0) {
       card.style.display = 'none';
+      recCard.style.display = 'none';
+      document.getElementById('recResultArea').style.display = 'none';
       return;
     }
     
     card.style.display = 'block';
+    recCard.style.display = 'block';
     grid.innerHTML = '';
 
     // Rank from highest suitability score to lowest
@@ -785,6 +885,147 @@
       `;
       grid.appendChild(el);
     });
+  }
+
+  function getTravelRecommendation() {
+    if (comparedCities.length === 0) return;
+
+    const prefTemp = document.getElementById('prefTemp').value;
+    const prefRain = document.getElementById('prefRain').value;
+    const prefOutdoor = document.getElementById('prefOutdoor').value;
+    const prefPurpose = document.getElementById('prefPurpose').value;
+
+    const scored = comparedCities.map(city => {
+      // Convert current temp back to C for logic if needed (it is stored in native unit)
+      const isImperial = currentUnit === 'imperial';
+      const tempC = isImperial ? (city.temp - 32) * 5/9 : city.temp;
+
+      // 1. Temp Points (Max 30)
+      let tempPoints = 0;
+      if (prefTemp === 'hot') {
+        if (tempC >= 25) tempPoints = 30;
+        else if (tempC >= 20) tempPoints = 20;
+        else if (tempC >= 15) tempPoints = 10;
+      } else if (prefTemp === 'cold') {
+        if (tempC < 15) tempPoints = 30;
+        else if (tempC < 20) tempPoints = 15;
+      } else { // moderate
+        if (tempC >= 15 && tempC <= 25) tempPoints = 30;
+        else {
+          const diff = Math.abs(tempC - 20);
+          tempPoints = Math.max(0, 30 - diff * 3);
+        }
+      }
+
+      // 2. Rain Points (Max 30)
+      const isRaining = (city.weatherId >= 200 && city.weatherId < 600);
+      let rainPoints = 30;
+      if (prefRain === 'hate' && isRaining) {
+        rainPoints = 5; // Heavy penalty
+      }
+
+      // 3. Outdoor Points (Max 20)
+      let outdoorPoints = 20;
+      if (prefOutdoor === 'yes') {
+        if (isRaining || city.weatherId >= 600 && city.weatherId < 700) {
+          outdoorPoints = 5; // Penalty for rain/snow
+        } else if (tempC < 8 || tempC > 34) {
+          outdoorPoints = 10; // Penalty for extreme temps
+        }
+      }
+
+      // 4. Purpose Points (Max 20)
+      let purposePoints = 20;
+      if (prefPurpose === 'relax') {
+        // High humidity and poor air quality decrease relaxation
+        const humFactor = Math.abs(city.humidity - 50) * 0.15;
+        purposePoints = Math.max(5, 20 - humFactor);
+      } else if (prefPurpose === 'adventure') {
+        // Adventure likes clear weather
+        if (isRaining) purposePoints = 8;
+        else if (city.weatherId >= 801) purposePoints = 15; // Cloudy
+      } else if (prefPurpose === 'culture') {
+        // Culture matches everything, light penalty for rain
+        if (isRaining) purposePoints = 14;
+      }
+
+      const matchScore = Math.round(tempPoints + rainPoints + outdoorPoints + purposePoints);
+      return { ...city, matchScore, tempC, isRaining };
+    });
+
+    // Sort by travel match score descending
+    scored.sort((a, b) => b.matchScore - a.matchScore);
+
+    const winner = scored[0];
+    const resultArea = document.getElementById('recResultArea');
+    const winnerTitle = document.getElementById('recWinner');
+    const explanationDiv = document.getElementById('recExplanation');
+    const rankList = document.getElementById('recRankList');
+
+    resultArea.style.display = 'block';
+    winnerTitle.innerHTML = `🏆 Perfect Match: ${winner.name} (${winner.matchScore}% Fit)`;
+
+    // Construct detailed logic explanation
+    let explanationHTML = `<p><b>Why ${winner.name} is your best choice:</b></p><ul>`;
+    
+    // Temp explanation
+    explanationHTML += `<li><b>Temperature:</b> It is currently ${Math.round(winner.temp)}&deg; here. `;
+    if (prefTemp === 'hot' && winner.tempC >= 22) explanationHTML += `It matches your preference for warm, sunlit travel.`;
+    else if (prefTemp === 'cold' && winner.tempC < 15) explanationHTML += `It gives you the refreshing, crisp cold climate you asked for.`;
+    else explanationHTML += `It offers comfortable, moderate weather that is perfect for traveling without extreme temperatures.`;
+    explanationHTML += `</li>`;
+
+    // Rain explanation
+    explanationHTML += `<li><b>Weather Condition:</b> Skies are "${winner.weatherDesc}". `;
+    if (winner.isRaining) {
+      explanationHTML += `Although it has rain, it fits your options better than alternatives.`;
+    } else {
+      explanationHTML += `No active rain makes it perfect for sight-seeing and avoiding wet weather!`;
+    }
+    explanationHTML += `</li>`;
+
+    // Purpose explanation
+    explanationHTML += `<li><b>Trip Suitability:</b> Selected for your <i>${prefPurpose}</i> goal. `;
+    if (prefPurpose === 'relax') explanationHTML += `Milder air indexes and comfortable humidity of ${winner.humidity}% create an excellent leisure climate.`;
+    else if (prefPurpose === 'adventure') explanationHTML += `Clear conditions will enable long hours of hiking, sight-seeing, and exploration.`;
+    else explanationHTML += `Ideal conditions for walking local streets, food tours, and discovering indoor cultural monuments.`;
+    explanationHTML += `</li></ul>`;
+
+    // Why not others explanation
+    if (scored.length > 1) {
+      explanationHTML += `<p style="margin-top:12px;"><b>Why not the other cities?</b></p><ul>`;
+      scored.slice(1).forEach(alt => {
+        explanationHTML += `<li><b>${alt.name}:</b> Ranked lower (${alt.matchScore}% match) because `;
+        let reasons = [];
+        if (prefTemp === 'hot' && alt.tempC < 18) reasons.push(`it is too cold (${Math.round(alt.temp)}&deg;)`);
+        if (prefTemp === 'cold' && alt.tempC >= 20) reasons.push(`it is too hot (${Math.round(alt.temp)}&deg;)`);
+        if (prefRain === 'hate' && alt.isRaining) reasons.push(`it is currently raining`);
+        if (prefOutdoor === 'yes' && alt.isRaining) reasons.push(`rainy weather will hinder outdoor plans`);
+        
+        if (reasons.length === 0) {
+          reasons.push(`its overall climate metrics are less optimal for your selected trip goals`);
+        }
+        explanationHTML += reasons.join(' and ') + `.</li>`;
+      });
+      explanationHTML += `</ul>`;
+    }
+
+    explanationDiv.innerHTML = explanationHTML;
+
+    // Render ranked lists
+    rankList.innerHTML = '';
+    scored.forEach((city, index) => {
+      const item = document.createElement('div');
+      item.className = 'rec-rank-item';
+      item.innerHTML = `
+        <span>${index + 1}. ${city.name}, ${city.country}</span>
+        <span class="rec-rank-score">${city.matchScore}% Match</span>
+      `;
+      rankList.appendChild(item);
+    });
+
+    // Scroll smoothly to results
+    resultArea.scrollIntoView({ behavior: 'smooth' });
   }
 
   function renderForecast(daily) {
