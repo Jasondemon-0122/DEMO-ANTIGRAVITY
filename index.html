@@ -239,6 +239,90 @@
     .forecast-toggle { display: flex; gap: 6px; }
     .fc-toggle-btn { background: transparent; border: 1px solid var(--glass-border); color: var(--text-muted); border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-family: 'Inter', sans-serif; cursor: pointer; transition: all 0.2s; }
     .fc-toggle-btn.active { background: var(--accent-dim); border-color: var(--accent-dim); color: #fff; }
+    
+    /* Comparison Component Styling */
+    .compare-add-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid var(--glass-border);
+      color: var(--text-primary);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      transition: all 0.2s;
+    }
+    .compare-add-btn:hover {
+      background: var(--accent-dim);
+      border-color: var(--accent-dim);
+    }
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 14px;
+    }
+    .comparison-item {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      padding: 18px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .comparison-item:hover {
+      transform: translateY(-2px);
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .comp-title-wrap {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .comp-city-name {
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+    .comp-remove-btn {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-size: 0.95rem;
+      padding: 2px;
+      transition: transform 0.15s;
+    }
+    .comp-remove-btn:hover {
+      transform: scale(1.2);
+    }
+    .comp-score-badge {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff;
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      align-self: flex-start;
+    }
+    .comp-stats {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+      border-top: 1px solid rgba(255,255,255,0.08);
+      padding-top: 8px;
+    }
+    .comp-stat-row {
+      display: flex;
+      justify-content: space-between;
+    }
+    .comp-subscore {
+      color: var(--accent);
+      font-weight: 500;
+    }
     .fc-day { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
     .fc-icon { font-size: 2rem; margin: 8px 0 6px; }
     .fc-high { font-size: 1rem; font-weight: 700; }
@@ -298,7 +382,10 @@
   <div class="card" id="weatherCard">
     <div class="weather-top">
       <div class="city-info">
-        <div class="city-name" id="cityName">-</div>
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px;">
+          <div class="city-name" id="cityName">-</div>
+          <button id="compareBtn" class="compare-add-btn">+ Compare</button>
+        </div>
         <div class="country" id="countryName">-</div>
         <div class="date-time" id="dateTime">-</div>
       </div>
@@ -379,6 +466,12 @@
     </div>
     <div class="forecast-row" id="forecastRow"></div>
   </div>
+
+  <!-- Comparison Card -->
+  <div class="card" id="comparisonCard" style="display:none; margin-top:24px;">
+    <div class="section-title">&#128202; City Suitability Comparison &amp; Ranking</div>
+    <div class="comparison-grid" id="comparisonGrid"></div>
+  </div>
 </div>
 <footer>Powered by <a href="https://openweathermap.org" target="_blank">OpenWeatherMap</a> &middot; Built with &#10084;&#65039; by WeatherNow</footer>
 <script>
@@ -389,6 +482,10 @@
   let forecastData = null; // Stored daily forecast data
   let forecastRange = 7; // Currently selected range (7 or 16)
   let map, currentMarker;
+  
+  let latestWeatherData = null;
+  let latestAirData = null;
+  let comparedCities = [];
 
   const cityInput   = document.getElementById('cityInput');
   const searchBtn   = document.getElementById('searchBtn');
@@ -397,6 +494,14 @@
   const spinner     = document.getElementById('spinner');
   const statusText  = document.getElementById('statusText');
   const weatherCard = document.getElementById('weatherCard');
+  const compareBtn  = document.getElementById('compareBtn');
+
+  searchBtn.addEventListener('click', triggerSearch);
+  cityInput.addEventListener('keydown', e => { if (e.key === 'Enter') triggerSearch(); });
+  geoBtn.addEventListener('click', getByGeo);
+  compareBtn.addEventListener('click', () => {
+    if (latestWeatherData) addToComparison(latestWeatherData, latestAirData);
+  });
 
   searchBtn.addEventListener('click', triggerSearch);
   cityInput.addEventListener('keydown', e => { if (e.key === 'Enter') triggerSearch(); });
@@ -461,12 +566,13 @@
       const lon = curr.coord.lon;
       const tempUnitParam = currentUnit === 'imperial' ? '&temperature_unit=fahrenheit' : '';
 
-      const [forecast, meteoDaily] = await Promise.all([
+      const [forecast, meteoDaily, airPollution] = await Promise.all([
         apiFetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=${currentUnit}&cnt=40`),
-        apiFetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto${tempUnitParam}&forecast_days=16`)
+        apiFetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto${tempUnitParam}&forecast_days=16`),
+        apiFetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${API_KEY}`).catch(() => null)
       ]);
       currentCity = city;
-      renderWeather(curr, forecast, meteoDaily.daily);
+      renderWeather(curr, forecast, meteoDaily.daily, airPollution);
     } catch (err) {
       showError(err.message || 'Failed to fetch weather. Check the city name and try again.');
     }
@@ -476,14 +582,15 @@
     showLoading('Fetching weather data...');
     try {
       const tempUnitParam = currentUnit === 'imperial' ? '&temperature_unit=fahrenheit' : '';
-      const [curr, forecast, meteoDaily] = await Promise.all([
+      const [curr, forecast, meteoDaily, airPollution] = await Promise.all([
         apiFetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=${currentUnit}`),
         apiFetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=${currentUnit}&cnt=40`),
-        apiFetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto${tempUnitParam}&forecast_days=16`)
+        apiFetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto${tempUnitParam}&forecast_days=16`),
+        apiFetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${API_KEY}`).catch(() => null)
       ]);
       currentCity = curr.name;
       cityInput.value = curr.name;
-      renderWeather(curr, forecast, meteoDaily.daily);
+      renderWeather(curr, forecast, meteoDaily.daily, airPollution);
     } catch (err) {
       showError(err.message || 'Failed to fetch weather for your location.');
     }
@@ -506,10 +613,13 @@
     if (currentCity) fetchWeather(currentCity);
   }
 
-  function renderWeather(curr, forecast, meteoDaily) {
+  function renderWeather(curr, forecast, meteoDaily, airPollution) {
     hideStatus();
     applyWeatherTheme(curr.weather[0].id, curr.dt, curr.sys.sunrise, curr.sys.sunset);
     updateMapMarker(curr.coord.lat, curr.coord.lon, curr.name);
+    
+    latestWeatherData = curr;
+    latestAirData = airPollution;
 
     document.getElementById('cityName').textContent  = curr.name;
     document.getElementById('countryName').textContent = `${curr.sys.country} \u00b7 ${curr.coord.lat.toFixed(2)}\u00b0, ${curr.coord.lon.toFixed(2)}\u00b0`;
@@ -562,6 +672,103 @@
     document.getElementById('btn7D').classList.toggle('active', range === 7);
     document.getElementById('btn16D').classList.toggle('active', range === 16);
     if (forecastData) renderForecast(forecastData);
+  }
+
+  function addToComparison(curr, airPollution) {
+    if (comparedCities.some(c => c.name === curr.name)) {
+      alert(`${curr.name} is already in the comparison list!`);
+      return;
+    }
+    if (comparedCities.length >= 5) {
+      alert("You can compare a maximum of 5 cities. Please remove one first.");
+      return;
+    }
+
+    const tempC = currentUnit === 'metric' ? curr.main.temp : (curr.main.temp - 32) * 5/9;
+    const humidity = curr.main.humidity;
+    const aqi = airPollution && airPollution.list && airPollution.list[0] ? airPollution.list[0].main.aqi : null;
+
+    // Suitability calculations (0 - 10 scale)
+    const tempScore = Math.max(0, 10 - Math.abs(tempC - 22) * 0.4);
+    const humScore = Math.max(0, 10 - Math.abs(humidity - 50) * 0.15);
+    
+    let aqiScore = 7.0;
+    let aqiDesc = 'Unknown';
+    if (aqi === 1) { aqiScore = 10; aqiDesc = 'Good'; }
+    else if (aqi === 2) { aqiScore = 8.5; aqiDesc = 'Fair'; }
+    else if (aqi === 3) { aqiScore = 7.0; aqiDesc = 'Moderate'; }
+    else if (aqi === 4) { aqiScore = 5.0; aqiDesc = 'Poor'; }
+    else if (aqi === 5) { aqiScore = 2.0; aqiDesc = 'Very Poor'; }
+
+    const overall = (tempScore + humScore + aqiScore) / 3;
+
+    comparedCities.push({
+      name: curr.name,
+      country: curr.sys.country,
+      temp: curr.main.temp,
+      humidity: humidity,
+      aqiDesc: aqiDesc,
+      tempScore: tempScore.toFixed(1),
+      humScore: humScore.toFixed(1),
+      aqiScore: aqiScore.toFixed(1),
+      overall: overall
+    });
+
+    renderComparison();
+  }
+
+  function removeComparison(cityName) {
+    comparedCities = comparedCities.filter(c => c.name !== cityName);
+    renderComparison();
+  }
+
+  function renderComparison() {
+    const card = document.getElementById('comparisonCard');
+    const grid = document.getElementById('comparisonGrid');
+    
+    if (comparedCities.length === 0) {
+      card.style.display = 'none';
+      return;
+    }
+    
+    card.style.display = 'block';
+    grid.innerHTML = '';
+
+    // Rank from highest suitability score to lowest
+    comparedCities.sort((a, b) => b.overall - a.overall);
+
+    comparedCities.forEach((city, index) => {
+      let medal = '';
+      if (index === 0) medal = '🥇 ';
+      else if (index === 1) medal = '🥈 ';
+      else if (index === 2) medal = '🥉 ';
+
+      const el = document.createElement('div');
+      el.className = 'comparison-item';
+      el.innerHTML = `
+        <div class="comp-title-wrap">
+          <div class="comp-city-name">${medal}${city.name}, ${city.country}</div>
+          <button class="comp-remove-btn" onclick="removeComparison('${city.name}')">❌</button>
+        </div>
+        <div class="comp-score-badge">Suitability: ${city.overall.toFixed(1)}/10</div>
+        
+        <div class="comp-stats">
+          <div class="comp-stat-row">
+            <span>Temp: ${Math.round(city.temp)}&deg;</span>
+            <span class="comp-subscore">${city.tempScore}/10</span>
+          </div>
+          <div class="comp-stat-row">
+            <span>Humidity: ${city.humidity}%</span>
+            <span class="comp-subscore">${city.humScore}/10</span>
+          </div>
+          <div class="comp-stat-row">
+            <span>Air Quality: ${city.aqiDesc}</span>
+            <span class="comp-subscore">${city.aqiScore}/10</span>
+          </div>
+        </div>
+      `;
+      grid.appendChild(el);
+    });
   }
 
   function renderForecast(daily) {
